@@ -20,7 +20,16 @@ namespace AuthAndRefreshTokenDemo.Controllers
             }
 
             var refreshId = Guid.NewGuid();
-            var refreshTokenValue = TokenUtil.GenerateRefreshToken(clientId, refreshId);
+
+            string refreshTokenValue = "";
+            try
+            {
+                refreshTokenValue = TokenUtil.GenerateRefreshToken(clientId, refreshId);
+            }
+            catch (Exception ex)
+            {
+                throw;
+            }
 
             _application.SetRefreshToken(new RefreshToken(clientId, refreshId));
 

@@ -21,8 +21,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
             ValidIssuer = TokenUtil.Issuer,
-            ValidAudience = TokenUtil.Issuer,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TokenUtil.RefreshTokenSecret))
+            ValidAudience = TokenUtil.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TokenUtil.RefreshTokenSigningSecret))
         };
     });
 // Access token

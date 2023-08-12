@@ -8,28 +8,90 @@ namespace Server
     public static class TokenUtil
     {
         // Get values from config
-        public static string RefreshTokenSecret = "super_secret_refresh_key_and_it_has_to_bee_long";
+        public static string RefreshTokenSigningSecret = "super_secret_refresh_signing_key_and_it_has_to_bee_very_long" + Guid.NewGuid().ToString() + Guid.NewGuid().ToString();
+        public static string RefreshTokenEncryptingSecret = "super_secret_refresh_encryption_key_and_it_has_to_bee_very_long" + Guid.NewGuid().ToString() + Guid.NewGuid().ToString();
         public static string AccessTokenSecret = "super_secret_auth_key_and_it_has_to_bee_long";
-        public static string Issuer = "AuthAndRefreshTokenDemo";
+        public static string Issuer = "Issuer";
+        public static string Audience = "Audience";
 
         public static string GenerateRefreshToken(Guid clientId, Guid refreshId)
         {
-            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(RefreshTokenSecret));
-            var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+            // See for encrypted refresh token https://stackoverflow.com/questions/18223868/how-to-encrypt-jwt-security-token
 
-            var claims = new[] {
+            List<Claim> claims = new List<Claim>()
+            {
                 new Claim("client_id", clientId.ToString()),
-                new Claim("refresh_id", refreshId.ToString()),
-                new Claim(ClaimTypes.Role, "Refresh")
+                new Claim("refresh_id", refreshId.ToString())
             };
 
-            var token = new JwtSecurityToken(Issuer,
-                Issuer,
-                claims,
-                expires: DateTime.Now.AddMonths(3), // Give long life time to avoid clients has to re-login
-                signingCredentials: credentials);
+            var signingSecurityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(RefreshTokenSigningSecret.Substring(0, 127)));
+            var encryptingSecurityKey = new SymmetricSecurityKey(Encoding.Default.GetBytes(RefreshTokenEncryptingSecret.Substring(0, 127)));
 
-            return new JwtSecurityTokenHandler().WriteToken(token);
+            var signingCredentials = new SigningCredentials(signingSecurityKey, SecurityAlgorithms.Sha512);
+
+            var encryptingCredentials = new EncryptingCredentials(
+                encryptingSecurityKey,
+                SecurityAlgorithms.Aes128KW,
+                SecurityAlgorithms.Aes128CbcHmacSha256);
+
+            var handler = new JwtSecurityTokenHandler();
+
+            var jwtSecurityToken = handler.CreateJwtSecurityToken(
+                Issuer,
+                Audience,
+                new ClaimsIdentity(claims),
+                DateTime.Now,
+                DateTime.Now.AddMonths(3), // Give long life time to avoid clients has to re-login
+                DateTime.Now,
+                signingCredentials);
+
+
+            string tokenString = handler.WriteToken(jwtSecurityToken);
+
+            return tokenString;
+
+
+
+            //var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(RefreshTokenSecret));
+            //var credentials = new SigningCredentials(signingSecurityKey, SecurityAlgorithms.HmacSha256);
+
+            //var claims = new[] {
+            //    new Claim("client_id", clientId.ToString()),
+            //    new Claim("refresh_id", refreshId.ToString()),
+            //    new Claim(ClaimTypes.Role, "Refresh")
+            //};
+
+            //var jwtToken = new JwtSecurityToken(Issuer,
+            //    Issuer,
+            //    claims,
+            //    expires: DateTime.Now.AddMonths(3), // Give long life time to avoid clients has to re-login
+            //    signingCredentials: credentials);
+
+
+
+
+            //var jwtTokenSting = new JwtSecurityTokenHandler().WriteToken(jwtToken);
+
+            //string encryptedToken = "";
+            //using (var encryptionProvider = credentials.CryptoProviderFactory.CreateAuthenticatedEncryptionProvider(signingSecurityKey, SecurityAlgorithms.HmacSha256))
+            //{
+            //    var encryptionResult = encryptionProvider.Encrypt(Encoding.UTF8.GetBytes(jwtTokenSting), Encoding.UTF8.GetBytes(Guid.NewGuid().ToString()));
+
+            //    encryptedToken = $"{Base64UrlEncoder.Encode(encryptionResult.IV)}.{Base64UrlEncoder.Encode(encryptionResult.Ciphertext)}.{Base64UrlEncoder.Encode(encryptionResult.AuthenticationTag)}";
+            //}
+
+            ////try
+            ////{
+            ////    var t = new JwtSecurityTokenHandler().ReadToken(str);
+            ////    var t2 = new JwtSecurityTokenHandler().ReadJwtToken(str);
+            ////    var t3 = new JwtSecurityTokenHandler().ValidateToken(str, new TokenValidationParameters() { }, out var validatedToken);
+            ////}
+            ////catch (Exception ex)
+            ////{
+
+            ////}
+
+            //return "";
         }
 
         public static string GenerateAccessToken(Guid clientId, Guid? userId, params string[] roles)
