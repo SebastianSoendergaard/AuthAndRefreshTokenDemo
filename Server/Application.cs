@@ -5,8 +5,9 @@
         private Dictionary<Guid, RefreshToken> _refreshTokens = new();
         private List<User> _users = new List<User>
         {
-            new User(Guid.NewGuid(), "Tarzan", "uoh"),
+            new User(Guid.NewGuid(), "Tarzan", "ooohiooh"),
             new User(Guid.NewGuid(), "Jane", "help"),
+            new User(Guid.NewGuid(), "Cheetah", "uhuh", true)
         };
 
         public void SetRefreshToken(RefreshToken token)
@@ -24,7 +25,7 @@
             return _refreshTokens.TryGetValue(clientId, out var refreshToken) ? refreshToken : null;
         }
 
-        public Guid? AuthenticateUser(string username, string password)
+        public User? AuthenticateUser(string username, string password)
         {
             // perform the very complex validation here
             var user = _users.FirstOrDefault(u => u.Username == username && u.Password == password);
@@ -33,7 +34,12 @@
                 return null;
             }
 
-            return user.UserId;
+            return user;
+        }
+
+        public User? GetUser(Guid userId)
+        {
+            return _users.SingleOrDefault(u => u.UserId == userId);
         }
 
         public void ForceLogout(Guid userId)
@@ -42,11 +48,11 @@
 
             foreach (var refreshToken in refreshTokensForUser)
             {
-                SetRefreshToken(new RefreshToken(refreshToken.ClientId, refreshToken.TokenValue));
+                SetRefreshToken(new RefreshToken(refreshToken.ClientId, refreshToken.RefreshId));
             }
         }
     }
 
-    public record RefreshToken(Guid ClientId, string TokenValue, Guid? UserId = null);
-    public record User(Guid UserId, string Username, string Password);
+    public record RefreshToken(Guid ClientId, Guid RefreshId, Guid? UserId = null);
+    public record User(Guid UserId, string Username, string Password, bool IsAdmin = false);
 }

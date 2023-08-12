@@ -14,64 +14,62 @@ namespace AuthAndRefreshTokenDemo.Controllers
         [HttpGet]
         public IActionResult GetRefreshToken([FromQuery] Guid clientId)
         {
-            var refreshTokenValue = TokenUtil.GenerateRefreshToken(clientId);
+            var refreshId = Guid.NewGuid();
+            var refreshTokenValue = TokenUtil.GenerateRefreshToken(clientId, refreshId);
 
-            _application.SetRefreshToken(new RefreshToken(clientId, refreshTokenValue));
+            _application.SetRefreshToken(new RefreshToken(clientId, refreshId));
 
             return Ok(refreshTokenValue);
         }
 
         // We may need some extra security here to ensure that call is only comming from our client
         [HttpGet]
-        [Authorize] // The refresh token gives access for the clients
-        public IActionResult GetAccessToken(string refreshToken)
+        [Authorize(Roles = "Refresh")] // Client need a refresh token to access
+        public IActionResult GetAccessToken()
         {
-            var existingRefreshToken = GetRefreshTokenFromClaim();
+            var existingRefreshToken = GetExistingRefreshToken();
             if (existingRefreshToken == null)
             {
                 return Unauthorized();
             }
 
-            if (refreshToken != existingRefreshToken.TokenValue)
-            {
-                // Someone else has used the refresh token, so it might be compromised, kick off the client and require a new token flow
-                _application.RemoveRefreshToken(existingRefreshToken.ClientId);
-                return Unauthorized();
-            }
+            // Token Rotation
+            // Create new refresh token every time we generate an access token 
+            var newRefreshId = Guid.NewGuid();
+            var refreshTokenValue = TokenUtil.GenerateRefreshToken(existingRefreshToken.ClientId, newRefreshId);
+            _application.SetRefreshToken(new RefreshToken(existingRefreshToken.ClientId, newRefreshId, existingRefreshToken.UserId));
 
-            var acceccTokenValue = TokenUtil.GenerateAccessToken(existingRefreshToken.ClientId, existingRefreshToken.UserId);
-            var refreshTokenValue = TokenUtil.GenerateRefreshToken(existingRefreshToken.ClientId);
-
-            _application.SetRefreshToken(new RefreshToken(existingRefreshToken.ClientId, refreshTokenValue, existingRefreshToken.UserId));
+            var roles = GetRoles(existingRefreshToken.ClientId).ToArray();
+            var acceccTokenValue = TokenUtil.GenerateAccessToken(existingRefreshToken.ClientId, existingRefreshToken.UserId, roles);
 
             return Ok(new { AccessToken = acceccTokenValue, RefreshToken = refreshTokenValue });
         }
 
         [HttpGet]
-        [Authorize] // No third party can access, but endpoint is open for all clients even if they has not yet logged in
+        [Authorize] // No third party can access, but endpoint is open for all authorized clients even if they has not yet logged in
         public IActionResult SomeOpenEndpoint()
         {
-            return Ok($"You got access to the open endpoint, clientId: {GetClientIdFromClaim()}, userId: {GetUserIdFromClaim()}");
+            return Ok($"You got access to the open endpoint, clientId: {HttpContext.GetClientId()}, userId: {HttpContext.GetUserId()}");
         }
 
         [HttpPost]
-        [Authorize] // Only our clients has access
+        [Authorize] // Only our authorized clients has access
         public IActionResult Login([FromBody] LoginRequest request)
         {
-            var userId = _application.AuthenticateUser(request.Username, request.Password);
-            if (userId == null)
+            var user = _application.AuthenticateUser(request.Username, request.Password);
+            if (user == null)
             {
                 // username or password was wrong
                 return Unauthorized();
             }
 
-            var existingRefreshToken = GetRefreshTokenFromClaim();
+            var existingRefreshToken = GetExistingRefreshToken();
             if (existingRefreshToken == null)
             {
                 return Unauthorized();
             }
 
-            _application.SetRefreshToken(new RefreshToken(existingRefreshToken.ClientId, existingRefreshToken.TokenValue, userId));
+            _application.SetRefreshToken(new RefreshToken(existingRefreshToken.ClientId, existingRefreshToken.RefreshId, user.UserId));
 
             return Ok();
         }
@@ -80,7 +78,7 @@ namespace AuthAndRefreshTokenDemo.Controllers
         [Authorize(Roles = "LoggedIn")] // Only access for logged in clients
         public IActionResult SomeRestrictedEndpoint()
         {
-            return Ok($"You got access to the restricted endpoint, clientId: {GetClientIdFromClaim()}, userId: {GetUserIdFromClaim()}");
+            return Ok($"You got access to the restricted endpoint, clientId: {HttpContext.GetClientId()}, userId: {HttpContext.GetUserId()}");
         }
 
         [HttpPost]
@@ -91,43 +89,56 @@ namespace AuthAndRefreshTokenDemo.Controllers
             return Ok();
         }
 
-        private RefreshToken? GetRefreshTokenFromClaim()
+        private RefreshToken? GetExistingRefreshToken()
         {
-            var clientId = GetClientIdFromClaim();
+            var clientId = HttpContext.GetClientId();
             if (clientId == null)
-            {
-                return null;
-            }
-
-            var refreshToken = _application.GetRefreshToken(clientId.Value);
-            if (refreshToken == null)
-            {
-                // Refresh token may have been removed due to malicious usage
-                return null;
-            }
-
-            return refreshToken;
-        }
-
-        private Guid? GetClientIdFromClaim()
-        {
-            if (!HttpContext.User.HasClaim(c => c.Type == "client_id"))
             {
                 // Invalid token
                 return null;
             }
 
-            return Guid.Parse(HttpContext.User.Claims.First(c => c.Type == "client_id").Value);
-        }
-
-        private Guid? GetUserIdFromClaim()
-        {
-            if (!HttpContext.User.HasClaim(c => c.Type == "user_id"))
+            var refreshId = HttpContext.GetRefreshId();
+            if (refreshId == null)
             {
+                // Invalid token
                 return null;
             }
 
-            return Guid.Parse(HttpContext.User.Claims.First(c => c.Type == "user_id").Value);
+            var existingRefreshToken = _application.GetRefreshToken(clientId.Value);
+            if (existingRefreshToken == null)
+            {
+                // Refresh token may have been removed due to Reuse Detection
+                return null;
+            }
+
+            if (refreshId != existingRefreshToken.RefreshId)
+            {
+                // Reuse Detection
+                // Someone else has used the refresh token, so it might be compromised
+                // Remove refresh token to kick off the client and require a new token flow
+                _application.RemoveRefreshToken(existingRefreshToken.ClientId);
+                return null;
+            }
+
+            return existingRefreshToken;
+        }
+
+        private IEnumerable<string> GetRoles(Guid? userId)
+        {
+            if (userId != null)
+            {
+                var user = _application.GetUser(userId.Value);
+                if (user != null)
+                {
+                    yield return "LoggedIn";
+
+                    if (user.IsAdmin)
+                    {
+                        yield return "Admin";
+                    }
+                }
+            }
         }
 
         public record LoginRequest(string Username, string Password);
