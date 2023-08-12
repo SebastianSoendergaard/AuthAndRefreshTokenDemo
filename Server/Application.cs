@@ -7,7 +7,7 @@
         {
             new User(Guid.NewGuid(), "Tarzan", "ooohiooh"),
             new User(Guid.NewGuid(), "Jane", "help"),
-            new User(Guid.NewGuid(), "Cheetah", "uhuh", true)
+            new User(Guid.NewGuid(), "Cheeta", "uhuh", true)
         };
 
         public void SetRefreshToken(RefreshToken token)
