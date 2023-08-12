@@ -11,9 +11,14 @@ namespace AuthAndRefreshTokenDemo.Controllers
         private static Application _application = new Application();
 
         // We need some extra security here to ensure that call is only comming from our client
-        [HttpGet]
+        [HttpGet("GetRefreshToken")]
         public IActionResult GetRefreshToken([FromQuery] Guid clientId)
         {
+            if (clientId == Guid.Empty)
+            {
+                return BadRequest("clientId missing");
+            }
+
             var refreshId = Guid.NewGuid();
             var refreshTokenValue = TokenUtil.GenerateRefreshToken(clientId, refreshId);
 
@@ -23,7 +28,7 @@ namespace AuthAndRefreshTokenDemo.Controllers
         }
 
         // We may need some extra security here to ensure that call is only comming from our client
-        [HttpGet]
+        [HttpGet("GetAccessToken")]
         [Authorize(Roles = "Refresh")] // Client need a refresh token to access
         public IActionResult GetAccessToken()
         {
@@ -36,23 +41,23 @@ namespace AuthAndRefreshTokenDemo.Controllers
             // Token Rotation
             // Create new refresh token every time we generate an access token 
             var newRefreshId = Guid.NewGuid();
-            var refreshTokenValue = TokenUtil.GenerateRefreshToken(existingRefreshToken.ClientId, newRefreshId);
+            var newRefreshTokenValue = TokenUtil.GenerateRefreshToken(existingRefreshToken.ClientId, newRefreshId);
             _application.SetRefreshToken(new RefreshToken(existingRefreshToken.ClientId, newRefreshId, existingRefreshToken.UserId));
 
             var roles = GetRoles(existingRefreshToken.ClientId).ToArray();
             var acceccTokenValue = TokenUtil.GenerateAccessToken(existingRefreshToken.ClientId, existingRefreshToken.UserId, roles);
 
-            return Ok(new { AccessToken = acceccTokenValue, RefreshToken = refreshTokenValue });
+            return Ok(new { AccessToken = acceccTokenValue, RefreshToken = newRefreshTokenValue });
         }
 
-        [HttpGet]
+        [HttpGet("SomeOpenEndpoint")]
         [Authorize] // No third party can access, but endpoint is open for all authorized clients even if they has not yet logged in
         public IActionResult SomeOpenEndpoint()
         {
             return Ok($"You got access to the open endpoint, clientId: {HttpContext.GetClientId()}, userId: {HttpContext.GetUserId()}");
         }
 
-        [HttpPost]
+        [HttpPost("Login")]
         [Authorize] // Only our authorized clients has access
         public IActionResult Login([FromBody] LoginRequest request)
         {
@@ -74,14 +79,14 @@ namespace AuthAndRefreshTokenDemo.Controllers
             return Ok();
         }
 
-        [HttpGet]
+        [HttpGet("SomeRestrictedEndpoint")]
         [Authorize(Roles = "LoggedIn")] // Only access for logged in clients
         public IActionResult SomeRestrictedEndpoint()
         {
             return Ok($"You got access to the restricted endpoint, clientId: {HttpContext.GetClientId()}, userId: {HttpContext.GetUserId()}");
         }
 
-        [HttpPost]
+        [HttpPost("ForceLogout")]
         [Authorize(Roles = "Admin")] // Only admins has access
         public IActionResult ForceLogout(Guid userId)
         {

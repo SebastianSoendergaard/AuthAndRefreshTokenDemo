@@ -8,8 +8,8 @@ namespace Server
     public static class TokenUtil
     {
         // Get values from config
-        public static string RefreshTokenSecret = "super_secret_refresh_key";
-        public static string AccessTokenSecret = "super_secret_auth_key";
+        public static string RefreshTokenSecret = "super_secret_refresh_key_and_it_has_to_bee_long";
+        public static string AccessTokenSecret = "super_secret_auth_key_and_it_has_to_bee_long";
         public static string Issuer = "AuthAndRefreshTokenDemo";
 
         public static string GenerateRefreshToken(Guid clientId, Guid refreshId)
