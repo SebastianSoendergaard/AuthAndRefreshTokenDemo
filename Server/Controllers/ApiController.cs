@@ -24,30 +24,22 @@ namespace AuthAndRefreshTokenDemo.Controllers
 
             _application.SetRefreshToken(new RefreshToken(clientId, refreshId));
 
-            return Ok(refreshTokenValue);
+            return Ok(new { RefreshToken = refreshTokenValue });
         }
 
         // We may need some extra security here to ensure that call is only comming from our client
         [HttpGet("GetAccessToken")]
-        [Authorize(Roles = "Refresh")] // Client need a refresh token to access
-        public IActionResult GetAccessToken()
+        public IActionResult GetAccessToken([FromHeader(Name = "Authorization")] string refreshToken)
         {
-            var existingRefreshToken = GetExistingRefreshToken();
+            var existingRefreshToken = GetExistingRefreshToken(refreshToken.Replace("Bearer ", ""));
             if (existingRefreshToken == null)
             {
                 return Unauthorized();
             }
 
-            // Token Rotation
-            // Create new refresh token every time we generate an access token 
-            var newRefreshId = Guid.NewGuid();
-            var newRefreshTokenValue = TokenUtil.GenerateRefreshToken(existingRefreshToken.ClientId, newRefreshId);
-            _application.SetRefreshToken(new RefreshToken(existingRefreshToken.ClientId, newRefreshId, existingRefreshToken.UserId));
+            var tokens = GenerateTokenPair(existingRefreshToken);
 
-            var roles = GetRoles(existingRefreshToken.ClientId).ToArray();
-            var acceccTokenValue = TokenUtil.GenerateAccessToken(existingRefreshToken.ClientId, existingRefreshToken.UserId, roles);
-
-            return Ok(new { AccessToken = acceccTokenValue, RefreshToken = newRefreshTokenValue });
+            return Ok(new { tokens.AccessToken, tokens.RefreshToken });
         }
 
         [HttpGet("SomeOpenEndpoint")]
@@ -68,15 +60,27 @@ namespace AuthAndRefreshTokenDemo.Controllers
                 return Unauthorized();
             }
 
-            var existingRefreshToken = GetExistingRefreshToken();
-            if (existingRefreshToken == null)
+            var clientId = HttpContext.GetClientId();
+            if (clientId == null)
             {
+                // Invalid access token
                 return Unauthorized();
             }
 
-            _application.SetRefreshToken(new RefreshToken(existingRefreshToken.ClientId, existingRefreshToken.RefreshId, user.UserId));
+            var existingRefreshToken = _application.GetRefreshToken(clientId.Value);
+            if (existingRefreshToken == null)
+            {
+                // Refresh token may have been removed due to Reuse Detection
+                return Unauthorized();
+            }
 
-            return Ok();
+            var newRefreshToken = new RefreshToken(existingRefreshToken.ClientId, existingRefreshToken.RefreshId, user.UserId);
+
+            _application.SetRefreshToken(newRefreshToken);
+
+            var tokens = GenerateTokenPair(newRefreshToken);
+
+            return Ok(new { tokens.AccessToken, tokens.RefreshToken });
         }
 
         [HttpGet("SomeRestrictedEndpoint")]
@@ -94,23 +98,14 @@ namespace AuthAndRefreshTokenDemo.Controllers
             return Ok();
         }
 
-        private RefreshToken? GetExistingRefreshToken()
+        private RefreshToken? GetExistingRefreshToken(string refreshToken)
         {
-            var clientId = HttpContext.GetClientId();
-            if (clientId == null)
+            if (!TokenUtil.TryValidateRefreshToken(refreshToken, out Guid clientId, out Guid refreshId))
             {
-                // Invalid token
                 return null;
             }
 
-            var refreshId = HttpContext.GetRefreshId();
-            if (refreshId == null)
-            {
-                // Invalid token
-                return null;
-            }
-
-            var existingRefreshToken = _application.GetRefreshToken(clientId.Value);
+            var existingRefreshToken = _application.GetRefreshToken(clientId);
             if (existingRefreshToken == null)
             {
                 // Refresh token may have been removed due to Reuse Detection
@@ -127,6 +122,20 @@ namespace AuthAndRefreshTokenDemo.Controllers
             }
 
             return existingRefreshToken;
+        }
+
+        private (string AccessToken, string RefreshToken) GenerateTokenPair(RefreshToken existingRefreshToken)
+        {
+            // Token Rotation
+            // Create new refresh token every time we generate an access token 
+            var newRefreshId = Guid.NewGuid();
+            var newRefreshTokenValue = TokenUtil.GenerateRefreshToken(existingRefreshToken.ClientId, newRefreshId);
+            _application.SetRefreshToken(new RefreshToken(existingRefreshToken.ClientId, newRefreshId, existingRefreshToken.UserId));
+
+            var roles = GetRoles(existingRefreshToken.UserId).ToArray();
+            var accessTokenValue = TokenUtil.GenerateAccessToken(existingRefreshToken.ClientId, existingRefreshToken.UserId, roles);
+
+            return (accessTokenValue, newRefreshTokenValue);
         }
 
         private IEnumerable<string> GetRoles(Guid? userId)

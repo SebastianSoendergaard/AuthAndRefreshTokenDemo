@@ -11,8 +11,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    // Refresh token
-    .AddJwtBearer(/*"Refresh Token", */options =>
+    .AddJwtBearer(options =>
     {
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -21,24 +20,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
             ValidIssuer = TokenUtil.Issuer,
-            ValidAudience = TokenUtil.Issuer,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TokenUtil.RefreshTokenSecret))
+            ValidAudience = TokenUtil.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TokenUtil.AccessTokenSecret))
         };
     });
-// Access token
-//.AddJwtBearer("Access Token", options =>
-//{
-//    options.TokenValidationParameters = new TokenValidationParameters
-//    {
-//        ValidateIssuer = true,
-//        ValidateAudience = true,
-//        ValidateLifetime = true,
-//        ValidateIssuerSigningKey = true,
-//        ValidIssuer = TokenUtil.Issuer,
-//        ValidAudience = TokenUtil.Issuer,
-//        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TokenUtil.AccessTokenSecret))
-//    };
-//});
+
 builder.Services.AddAuthorization();
 
 var app = builder.Build();

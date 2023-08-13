@@ -11,6 +11,7 @@ namespace Server
         public static string RefreshTokenSecret = "super_secret_refresh_key_and_it_has_to_bee_long";
         public static string AccessTokenSecret = "super_secret_auth_key_and_it_has_to_bee_long";
         public static string Issuer = "AuthAndRefreshTokenDemo";
+        public static string Audience = "AuthAndRefreshTokenDemo";
 
         public static string GenerateRefreshToken(Guid clientId, Guid refreshId)
         {
@@ -19,12 +20,11 @@ namespace Server
 
             var claims = new[] {
                 new Claim("client_id", clientId.ToString()),
-                new Claim("refresh_id", refreshId.ToString()),
-                new Claim(ClaimTypes.Role, "Refresh")
+                new Claim("refresh_id", refreshId.ToString())
             };
 
             var token = new JwtSecurityToken(Issuer,
-                Issuer,
+                Audience,
                 claims,
                 expires: DateTime.Now.AddMonths(3), // Give long life time to avoid clients has to re-login
                 signingCredentials: credentials);
@@ -49,12 +49,48 @@ namespace Server
             }
 
             var token = new JwtSecurityToken(Issuer,
-                Issuer,
+                Audience,
                 claims,
                 expires: DateTime.Now.AddMinutes(10), // Give short life time as a new token can be given with refresh token
                 signingCredentials: credentials);
 
             return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        public static bool TryValidateRefreshToken(string refreshToken, out Guid clientId, out Guid refreshId)
+        {
+            try
+            {
+                var handler = new JwtSecurityTokenHandler();
+
+                handler.ValidateToken(refreshToken, new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidIssuer = Issuer,
+                    ValidAudience = Audience,
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(RefreshTokenSecret))
+                },
+                out var validatedToken);
+
+                var jwtSecurityToken = handler.ReadJwtToken(refreshToken);
+
+                var cid = jwtSecurityToken.Claims.First(claim => claim.Type == "client_id").Value;
+                var rid = jwtSecurityToken.Claims.First(claim => claim.Type == "refresh_id").Value;
+
+                clientId = Guid.Parse(cid);
+                refreshId = Guid.Parse(rid);
+
+                return true;
+            }
+            catch
+            {
+                clientId = Guid.Empty;
+                refreshId = Guid.Empty;
+                return false;
+            }
         }
 
         public static Guid? GetClientId(this HttpContext httpContext)
